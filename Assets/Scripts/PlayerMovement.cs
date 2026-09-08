@@ -6,25 +6,66 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float moveSpeed = 5f;
     [SerializeField] private float gridSize = 1f;
     [SerializeField] private LayerMask collisionLayer;
+    [SerializeField] private float turnDelay = 0.1f;
+
+    private Animator animator;
 
     private bool isMoving;
+    private bool useFirstStep = true;
+    private bool waitingAfterTurn;
+    private float turnTime;
+
+    private Vector3 facingDirection = Vector3.down;
+
+    private void Awake()
+    {
+        animator = GetComponent<Animator>();
+        PlayIdleAnimation();
+    }
 
     private void Update()
     {
         if (isMoving)
             return;
 
-        Vector3 direction = GetDirection();
+        Vector3 requestedDirection = GetDirection();
 
-        if (direction != Vector3.zero)
+        // Button was released after turning.
+        // Next press may move immediately.
+        if (requestedDirection == Vector3.zero)
         {
-            Vector3 targetPosition =
-                transform.position + direction * gridSize;
+            waitingAfterTurn = false;
+            return;
+        }
 
-            if (IsWalkable(targetPosition))
-            {
-                StartCoroutine(Move(direction));
-            }
+        // Different direction: turn, but don't move yet.
+        if (requestedDirection != facingDirection)
+        {
+            facingDirection = requestedDirection;
+            PlayIdleAnimation();
+
+            waitingAfterTurn = true;
+            turnTime = Time.time;
+
+            return;
+        }
+
+        // We just turned into this direction.
+        // Only start walking if the button is held long enough.
+        if (waitingAfterTurn)
+        {
+            if (Time.time - turnTime < turnDelay)
+                return;
+
+            waitingAfterTurn = false;
+        }
+
+        Vector3 targetPosition =
+            transform.position + requestedDirection * gridSize;
+
+        if (IsWalkable(targetPosition))
+        {
+            StartCoroutine(Move(requestedDirection));
         }
     }
 
@@ -60,6 +101,9 @@ public class PlayerMovement : MonoBehaviour
     {
         isMoving = true;
 
+        string stepAnimation = GetStepAnimationName(direction);
+        animator.Play(stepAnimation, 0, 0f);
+
         Vector3 startPosition = transform.position;
         Vector3 targetPosition =
             startPosition + direction * gridSize;
@@ -67,11 +111,8 @@ public class PlayerMovement : MonoBehaviour
         while ((targetPosition - transform.position).sqrMagnitude > 0.001f)
         {
             transform.position = Vector3.MoveTowards(
-                // Where from
                 transform.position,
-                // Where to
                 targetPosition,
-                // How much
                 moveSpeed * Time.deltaTime
             );
 
@@ -80,7 +121,43 @@ public class PlayerMovement : MonoBehaviour
 
         transform.position = targetPosition;
 
+        useFirstStep = !useFirstStep;
+
+        PlayIdleAnimation();
+
         isMoving = false;
+    }
+
+    private string GetStepAnimationName(Vector3 direction)
+    {
+        string directionName = GetDirectionName(direction);
+        string stepName = useFirstStep ? "step1" : "step2";
+
+        return $"{stepName}_{directionName}";
+    }
+
+    private void PlayIdleAnimation()
+    {
+        string directionName = GetDirectionName(facingDirection);
+
+        animator.Play($"idle_{directionName}", 0, 0f);
+    }
+
+    private string GetDirectionName(Vector3 direction)
+    {
+        if (direction == Vector3.down)
+            return "down";
+
+        if (direction == Vector3.left)
+            return "left";
+
+        if (direction == Vector3.up)
+            return "up";
+
+        if (direction == Vector3.right)
+            return "right";
+
+        return "down";
     }
 
     private bool IsWalkable(Vector3 targetPosition)
